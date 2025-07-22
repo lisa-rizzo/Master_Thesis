@@ -21,7 +21,7 @@ class CIFAR10Noise(CIFAR10):
         self.labels = self.targets
 
     def set_label(self, noise_level):
-        label_file = torch.load(f'{self.root}/CIFAR-10_human.pt')
+        label_file = torch.load(f'{self.root}/CIFAR-10_human.pt', weights_only=False)
         self.labels = list(list(label_file[LABELS[noise_level]]))
 
     def __getitem__(self, index):
