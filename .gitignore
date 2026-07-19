@@ -66,10 +66,7 @@ coverage.xml
 *.mo
 *.pot
 
-# Ergebnisse und Logs
-glare_clean/results/
-glare_clean/datasets/
-glare_clean/lightning_logs/
+# Logs
 *.log
 
 # Django stuff:
@@ -141,7 +138,7 @@ checkpoints/
 version_*/
 lightning_logs/
 
-# Large prepared datasets  
+# Large prepared datasets
 prepared/
 
 # Pickle files
@@ -153,13 +150,15 @@ prepared/
 *.npy
 *.npz
 
-results/
-prepared/
-glare_clean/luca_results/
-datasets/CIFAR10/CIFAR-10_human.pt
-*.ckpt
-*.pth
-*.pt
-*.pkl
-__pycache__/
+# Background literature (PDFs, copyrighted)
+background_info/
+
+# Generated evaluation outputs (products of compare_full.py etc.)
+evaluation/full_comparison_*.xlsx
+evaluation/mislabels_comparison_*.xlsx
+evaluation/old_evaluation/
+
+# Regenerable thesis figures (produced by thesis_images/visualize_*.py)
+thesis_images/*.png
+
 *.ipynb

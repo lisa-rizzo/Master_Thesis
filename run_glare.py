@@ -11,7 +11,7 @@ import torch
 import gc
 import psutil
 
-# SYSTEM CLEANUP UND DIAGNOSTICS
+# SYSTEM CLEANUP AND DIAGNOSTICS
 def system_cleanup():
     """GPU Memory und System bereinigen"""
     if torch.cuda.is_available():
@@ -24,21 +24,21 @@ def system_cleanup():
     print("🧹 GPU Memory und System bereinigt")
     
     # System-Diagnostics
-    print(f"💻 CPU Usage: {psutil.cpu_percent()}%")
-    print(f"💾 RAM Usage: {psutil.virtual_memory().percent}%")
+    print(f" CPU Usage: {psutil.cpu_percent()}%")
+    print(f" RAM Usage: {psutil.virtual_memory().percent}%")
 
 # Single GPU Setup (Quadro RTX 5000)
 def setup_gpu():
     if torch.cuda.is_available():
         gpu_name = torch.cuda.get_device_name(0)
-        print(f"🚀 Verwende GPU 0: {gpu_name}")
+        print(f" Verwende GPU 0: {gpu_name}")
         print(f"   Optimiert für stabile Performance")
         return True
     else:
-        print("⚠️  Keine GPU verfügbar - verwende CPU")
+        print(" Keine GPU verfügbar - verwende CPU")
         return False
 
-# ImageTransform für VerSe-Daten
+
 class ImageTransform:
     def __init__(self, mean, std):
         self.transforms = Compose([
@@ -47,43 +47,47 @@ class ImageTransform:
     def __call__(self, data):
         return self.transforms(data)
 
-# System cleanup VOR allem anderen
+# System cleanup 
 system_cleanup()
 
-# GPU Check
+# GPU check
 gpu_available = setup_gpu()
 
-# 1. Spec laden
-with open("/home/student/lisa_ma/results/VerSe_classifier/test_glare_27092025_1811/spec.json", "r") as f:
+# specs
+spec_path = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_12102025_2109/spec.json"
+with open(spec_path, "r") as f:
     spec = json.load(f)
 
-# VerSe-spezifische Daten
+
 spec_data = {
     "mean": [-111.3885],
     "std": [406.3665]
 }
 
-# BEWÄHRTE PERFORMANCE-EINSTELLUNGEN
+
 spec["dataset_dir"] = "/home/student/lisa_ma/prepared"
-#spec["train_set_size"] = 0.01  # 1% für Test
+#spec["train_set_size"] = 0.01  
 spec["batch_size"] = 16  
 
-weights_dir = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_27092025_1811/weights"
+#weights_dir = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_27092025_1811/weights"
+weights_dir = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_12102025_2109/weights"
 
-# Ergebnis-Ordner erstellen
+# create results dir
 results_base_dir = os.path.join("results", "glare")
 os.makedirs(results_base_dir, exist_ok=True)
 
-# Timestamp und Run-Info
+# Timestamp and run-info
 now = datetime.now()
 timestamp = now.strftime("%d-%m-%y_%H:%M")
 #data_percent = int(spec["train_set_size"] * 100)
+# date/time string safe for filenames (YYYYmmdd_HHMMSS)
+run_ts = now.strftime("%Y%m%d_%H%M%S")
 
 #print(f"=== GLARE-TEST ({data_percent}% Daten, Single GPU) ===")
-#print(f"Verwende {data_percent}% der verfügbaren Daten")
+#print(f"Use {data_percent}% of data")
 print(f"Batch Size: {spec['batch_size']}")
 
-# Epochen-Auswahl
+# number of epochs 
 all_files = os.listdir(weights_dir)
 epoch_pattern = re.compile(r'^epoch_(\d+)$')
 epoch_numbers = []
@@ -98,7 +102,7 @@ epoch_numbers.sort()
 last_x_epochs = epoch_numbers # all epochs
 num_epochs = len(last_x_epochs)
 
-# Run-Ordner erstellen
+# create run folder
 run_folder = f"{timestamp}_ep-{num_epochs}_single-gpu"
 run_results_dir = os.path.join(results_base_dir, run_folder)
 os.makedirs(run_results_dir, exist_ok=True)
@@ -107,7 +111,7 @@ print(f"Verfügbare Epochen: {epoch_numbers}")
 print(f"Verwende die letzten {num_epochs} Epochen: {last_x_epochs}")
 print(f"Ergebnisse werden gespeichert in: {run_results_dir}")
 
-# Epochen kopieren
+# copy selected epochs to a temp folder for GLARE
 temp_weights_dir = f"{weights_dir}_temp_test"
 if os.path.exists(temp_weights_dir):
     shutil.rmtree(temp_weights_dir)
@@ -119,7 +123,7 @@ for epoch_num in last_x_epochs:
     shutil.copy2(src, dst)
     print(f"  Kopiert: epoch_{epoch_num}")
 
-# 2. DataLoader setup mit optimierter Worker-Anzahl
+# Dataloader set-up
 data_module = VerSeDataLoader(
     spec=spec,
     train_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"]),
@@ -129,7 +133,7 @@ data_module = VerSeDataLoader(
 data_module.setup()
 train_loader = data_module.train_dataloader()
 
-# Erweiterte GPU Memory Status vor Start
+# GPU memory status before start
 if gpu_available:
     mem_total = torch.cuda.get_device_properties(0).total_memory / 1024**3
     mem_reserved = torch.cuda.memory_reserved(0) / 1024**3
@@ -139,7 +143,7 @@ if gpu_available:
 
 print(f"Analysiere {len(train_loader.dataset)} Samples")
 
-# 3. GLARE ausführen
+
 import time
 start_time = time.time()
 
@@ -153,14 +157,14 @@ scores, grad_norms = compute_glare(
 end_time = time.time()
 elapsed_time = end_time - start_time
 
-# 4. Performance-Statistiken
+# performance statistics
 samples_per_second = len(scores) / elapsed_time
 print(f"\n⚡ Performance-Statistiken:")
 print(f"Gesamtzeit: {elapsed_time/60:.1f} Minuten")
 print(f"Samples/Sekunde: {samples_per_second:.2f}")
 print(f"Single GPU Performance: Stabil und optimiert")
 
-# Ergebnisse auswerten
+# evaluate results
 method = get_parameter(spec, "method", "glarex", str)
 threshold = scores[f'{method} score'].quantile(get_parameter(spec, "threshold_fraction", 0.1, float))
 mislabels = scores[scores[f'{method} score'] <= threshold]
@@ -170,24 +174,30 @@ print(f"Analysierte Samples: {len(scores)}")
 print(f"Gefundene Mislabels: {len(mislabels)} ({len(mislabels)/len(scores)*100:.1f}%)")
 print(f"Threshold: {threshold:.6f}")
 
-# Ergebnisse speichern
-mislabels_list_path = os.path.join(run_results_dir, 'mislabels_list.csv')
-mislabels_only_path = os.path.join(run_results_dir, 'mislabels_only.csv')
+# safe results
+mislabels_list_path = os.path.join(run_results_dir, f'mislabels_list_{run_ts}.csv')
+mislabels_only_path = os.path.join(run_results_dir, f'mislabels_only_{run_ts}.csv')
+
+scores_pkl_path = os.path.join(run_results_dir, f'scores_{run_ts}.pkl')
+grad_norms_pkl_path = os.path.join(run_results_dir, f'grad_norms_{run_ts}.pkl')
 
 scores.to_csv(mislabels_list_path, index=False)
 mislabels.to_csv(mislabels_only_path, index=False)
 
-# Pickle-Format für strukturierte Datenanalyse (wie CIFAR10)
-scores.to_pickle(os.path.join(run_results_dir, 'scores.pkl'))
-grad_norms.to_pickle(os.path.join(run_results_dir, 'grad_norms.pkl'))
+scores.to_pickle(scores_pkl_path)
+grad_norms.to_pickle(grad_norms_pkl_path)
 
 print(f"📊 Zusätzlich gespeichert:")
-print(f"   • scores.pkl (strukturierte GLARE-Daten)")
-print(f"   • grad_norms.pkl (rohe Gradient-Normen)")
+print(f"   • {os.path.basename(scores_pkl_path)} (strukturierte GLARE-Daten)")
+print(f"   • {os.path.basename(grad_norms_pkl_path)} (rohe Gradient-Normen)")
 
-# Run-Info mit erweiterten GPU-Details
+
 run_info = {
     "timestamp": now.isoformat(),
+    "run_ts": run_ts,
+    "spec_path": spec_path,
+    "weights_dir": weights_dir,
+    "weights_model": os.path.basename(os.path.dirname(weights_dir)),
     "gpu_name": torch.cuda.get_device_name(0) if gpu_available else "CPU",
     "batch_size": spec["batch_size"],
     #"data_percent": data_percent,
@@ -211,7 +221,6 @@ print(f"📁 Ergebnisse gespeichert in: {run_results_dir}")
 shutil.rmtree(temp_weights_dir)
 print(f"Temporärer Ordner bereinigt.")
 
-# Finale GPU Memory Bereinigung
 if gpu_available:
     torch.cuda.empty_cache()
     print("🧹 Finale GPU Memory-Bereinigung abgeschlossen")

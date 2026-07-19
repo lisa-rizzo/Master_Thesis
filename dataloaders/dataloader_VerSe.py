@@ -2,11 +2,12 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader, random_split, Dataset
 import torch
 import numpy as np
-import datasets.VerSe.get_data_VerSe as get_data_VerSe  
+import datasets.VerSe.get_data_VerSe as get_data_VerSe 
 from pathlib import Path
 import re
 from torch.utils.data._utils.collate import default_collate
 import torch.nn.functional as F
+from collections import defaultdict
 
 
 class VerSeDataset(Dataset):
@@ -17,6 +18,7 @@ class VerSeDataset(Dataset):
         """
         self.file_paths = file_paths
         self.transform = transform
+        self.pid_corrections = {}
 
     def __len__(self):
         return len(self.file_paths)
@@ -28,16 +30,28 @@ class VerSeDataset(Dataset):
         image_tensor = torch.tensor(image_3d, dtype=torch.float32).unsqueeze(0)
         if self.transform:
             image_tensor = self.transform(image_tensor)
-        label = self.get_region_label_from_vert(self.get_vert_number(path))
+
+        orig_vert = self.get_vert_number(path)
         pid = self.get_pid_from_path(path)
-        return image_tensor, label, pid
+
+        # apply pid-specific correction if exists
+        corrected_vert = orig_vert
+        if pid in self.pid_corrections:
+            corrected_vert = self.pid_corrections[pid].get(orig_vert, orig_vert)
+
+        label = self.get_region_label_from_vert(corrected_vert)
+        sample_id = f"{pid}_vert{corrected_vert}"
+        return image_tensor, label, sample_id
     
     @staticmethod
     def get_vert_number(path):
         path_str = str(path)
         match = re.search(r'_vert(\d+)', path_str)
         if match:
-            return int(match.group(1))
+            try:
+                return int(match.group(1))
+            except ValueError:
+                    return -1
         else:
             # if no label is found
             return -1
@@ -119,6 +133,72 @@ class VerSeDataLoader(pl.LightningDataModule):
         self.train_dataset = None
         self.val_dataset = None
 
+    
+    def _compute_pid_corrections(self, file_paths: list[Path],
+                                 target_pids_1820: list | None = None,
+                                 target_pids_28: list | None = None) -> dict:
+        """
+        Only compute corrections for the PIDs listed in target_pids_* if these are provided.
+        Rules:
+          - Rule A (28 present): if 28 in verts AND 20 in verts:
+                map 28 -> 20 and map existing verts >=20 (except 28) -> v+1
+          - Rule B (missing 19): if 20 in verts and 19 not in verts and 18 in verts:
+                map verts >=20 -> v-1
+          - Otherwise identity mapping.
+        Returns dict: pid -> { orig_vert: corrected_vert, ... }
+        """
+        use_target_filter = (target_pids_1820 is not None) or (target_pids_28 is not None)
+        target_set = set()
+        if target_pids_1820:
+            target_set.update(target_pids_1820)
+        if target_pids_28:
+            target_set.update(target_pids_28)
+
+        pid_to_verts = defaultdict(set)
+        # If filtering by target PIDs, only gather entries for them
+        for p in file_paths:
+            pid = VerSeDataset.get_pid_from_path(p)
+            if use_target_filter and pid not in target_set:
+                continue
+            vert = VerSeDataset.get_vert_number(p)
+            if vert >= 0:
+                pid_to_verts[pid].add(vert)
+
+        # If no filter specified, ensure we still build mapping for all pids
+        if not use_target_filter:
+            for p in file_paths:
+                pid = VerSeDataset.get_pid_from_path(p)
+                vert = VerSeDataset.get_vert_number(p)
+                if vert >= 0:
+                    pid_to_verts[pid].add(vert)
+
+        pid_corrections = {}
+        for pid, verts in pid_to_verts.items():
+            verts_set = set(verts)
+            mapping = {}
+            # Rule A: 28 present and 20 present
+            if 28 in verts_set and 20 in verts_set:
+                for v in verts_set:
+                    if v == 28:
+                        mapping[v] = 20
+                    elif v >= 20 and v != 28:
+                        mapping[v] = v + 1
+                    else:
+                        mapping[v] = v
+            # Rule B: 20 present, 19 missing, 18 present -> shift >=20 down by 1
+            elif 20 in verts_set and 19 not in verts_set and 18 in verts_set:
+                for v in verts_set:
+                    if v >= 20:
+                        mapping[v] = v - 1
+                    else:
+                        mapping[v] = v
+            else:
+                for v in verts_set:
+                    mapping[v] = v
+            pid_corrections[pid] = mapping
+
+        return pid_corrections
+
     def setup(self, stage=None):
         # Train files
         files, missing = get_data_VerSe.get_filtered_files_across_dsnames(
@@ -144,7 +224,48 @@ class VerSeDataLoader(pl.LightningDataModule):
 
         self.files = files  
 
+        # Val files (collect early so we can compute corrections across both splits)
+        val_files, _ = get_data_VerSe.get_filtered_files_across_dsnames(
+            root_dir=self.root_dir,
+            excel_path=self.excel_file,
+            split="val",
+            glob_pattern="*.npz",
+            pid_col="pid",
+            dsname_col="dsname",
+            verts_col="vert_label",
+            check_complete=True,
+            apply_excel_filter=True,
+        )
+
+        # read optional pid lists from spec (expect lists of strings)
+        pid_fix_1820 = self.spec.get("pid_fix_1820", None)
+        pid_fix_28 = self.spec.get("pid_fix_28", None)
+
+        # Compute corrections across the union of train+val files so the same mapping
+        # is applied to both datasets (prevents split-dependent differences).
+        all_files = list(self.files) + list(val_files)
+        pid_corrections_all = self._compute_pid_corrections(
+            all_files,
+            target_pids_1820=pid_fix_1820,
+            target_pids_28=pid_fix_28
+        )
+
+        # show a short sample of corrections for debugging (optional)
+        if pid_corrections_all:
+            print("PID corrections (sample):")
+            printed = 0
+            for pid, mapping in pid_corrections_all.items():
+                print(f"  {pid}: {mapping}")
+                printed += 1
+                if printed >= 10:
+                    break
+
+        # ---- attach the same computed corrections to both dataset instances ----
         self.train_dataset = VerSeDataset(files, transform=self.train_transforms)
+        self.train_dataset.pid_corrections = pid_corrections_all
+
+        self.val_dataset = VerSeDataset(val_files, transform=self.val_transforms)
+        self.val_dataset.pid_corrections = pid_corrections_all
 
         # Val files
         val_files, _ = get_data_VerSe.get_filtered_files_across_dsnames(
@@ -159,6 +280,11 @@ class VerSeDataLoader(pl.LightningDataModule):
             apply_excel_filter=True,
         )
         self.val_dataset = VerSeDataset(val_files, transform=self.val_transforms)
+        # compute and attach pid corrections for validation files as well (same filter keys)
+        val_pid_corrections = self._compute_pid_corrections(val_files,
+                                                            target_pids_1820=pid_fix_1820,
+                                                            target_pids_28=pid_fix_28)
+        self.val_dataset.pid_corrections = val_pid_corrections
 
     def train_dataloader(self):
         return DataLoader(
@@ -209,7 +335,7 @@ if __name__ == "__main__":
     data_module = VerSeDataLoader(spec=spec, num_workers=0)
     data_module.setup()
 
-    # --- Hier Wertebereich der ersten 5 Trainingsbilder ausgeben ---
+    # # --- Sanity prints ---
     print("Wertebereich der ersten 5 Trainingsbilder:")
     for path in data_module.files[:5]:
         data = np.load(path)

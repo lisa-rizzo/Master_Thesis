@@ -15,7 +15,7 @@ from models.model import Model
 from pytorch_lightning import Trainer
 from dataloaders.dataloader_VerSe import VerSeDataLoader
 from monai.transforms import Compose, NormalizeIntensity, RandAdjustContrastd, RandGaussianNoised, RandGaussianSmoothd, RandScaleIntensityd, RandShiftIntensityd, RandSimulateLowResolutiond
-from metric_cal import StepLossLogger
+from helper.loss_logger import StepLossLogger
 from pytorch_lightning.loggers import TensorBoardLogger
 
 

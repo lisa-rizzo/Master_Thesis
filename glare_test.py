@@ -141,7 +141,7 @@ def calculate_glare(grad_norms):
         grad_norm_in_min_epochs = np.zeros(n_classes)
         grad_norm_total = np.zeros(n_classes)
         
-        # Process each epoch for this sample
+        # Process each epoch for sample
         for epoch in range(n_epoch):
             epoch_data = sample_data[sample_data['epoch'] == epoch]
             
@@ -213,12 +213,12 @@ def compute_glare(dataloader, num_classes, weights_dir, spec):
     ]
     weights.sort(key=lambda x: int(x.rsplit('_', 1)[-1]))
 
-    # Force use of only GPU 0 (Quadro RTX 5000) for stability
+    # Force use of only GPU 0 (Quadro RTX 5000) 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     
     # Single GPU Info
-    print(f"🚀 Verwende GPU 0 für stabile GLARE-Berechnung: {torch.cuda.get_device_name(0)}")
-    print(f"   Grund: Optimale Performance ohne DataParallel-Komplexität")
+    print(f"Verwende GPU 0 für stabile GLARE-Berechnung: {torch.cuda.get_device_name(0)}")
+    print(f"Grund: Optimale Performance ohne DataParallel-Komplexität")
 
     # Load models for each epoch
     models = []
@@ -232,7 +232,7 @@ def compute_glare(dataloader, num_classes, weights_dir, spec):
         full_model.load_state_dict(state_dict)
         net = full_model.model.to(device)
         
-        # No DataParallel - single GPU for stability
+        # No DataParallel 
         print(f"  Epoche {index}: Model auf GPU 0 geladen")
         
         models.append(net)

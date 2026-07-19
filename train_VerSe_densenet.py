@@ -24,8 +24,8 @@ from sklearn.metrics import accuracy_score, recall_score, f1_score, matthews_cor
 from models.model_densenet import DenseNetModel
 from pytorch_lightning import Trainer
 from dataloaders.dataloader_VerSe import VerSeDataLoader
-from monai.transforms import Compose, NormalizeIntensity, RandAdjustContrastd, RandGaussianNoised, RandGaussianSmoothd, RandScaleIntensityd, RandShiftIntensityd, RandSimulateLowResolutiond
-from metric_cal import StepLossLogger
+from monai.transforms import Compose, NormalizeIntensityd, RandAdjustContrastd, RandGaussianNoised, RandGaussianSmoothd, RandScaleIntensityd, RandShiftIntensityd, RandSimulateLowResolutiond
+from helper.loss_logger import StepLossLogger
 from pytorch_lightning.loggers import TensorBoardLogger
 
 
@@ -61,6 +61,20 @@ spec = {
     "method": "glarex",
     "threshold_fraction": 0.1
 }
+pid_json_path = "/home/student/lisa_ma/pid_corrections.json"
+if os.path.isfile(pid_json_path):
+    try:
+        with open(pid_json_path, "r") as f:
+            pid_data = json.load(f)
+        if pid_data.get("pid_fix_1820"):
+            spec["pid_fix_1820"] = pid_data["pid_fix_1820"]
+        if pid_data.get("pid_fix_28"):
+            spec["pid_fix_28"] = pid_data["pid_fix_28"]
+        print("Loaded pid corrections into spec:", [k for k in ("pid_fix_1820","pid_fix_28") if k in spec])
+    except Exception as e:
+        print("Warning: could not load pid_corrections.json:", e)
+else:
+    print("pid_corrections.json not found, continuing without pid fixes.")
 
 spec_data = {
     "mean": [-111.3885],
@@ -71,17 +85,23 @@ spec_data = {
 
 class ImageTransform:
     def __init__(self, mean, std):
+        # dict-based pipeline (keys=["img"])
         self.transforms = Compose([
-            NormalizeIntensity(subtrahend=mean, divisor=std, channel_wise=True),
-            # Aktivierte Augmentierungen für bessere Generalisierung
-            #RandAdjustContrastd(keys=["img"], prob=0.3, gamma=(0.8, 1.2)),
-            #RandGaussianNoised(keys=["img"], prob=0.2, mean=0.0, std=0.05),
-           # RandScaleIntensityd(keys=["img"], factors=0.05, prob=0.3),
-            #RandShiftIntensityd(keys=["img"], offsets=0.05, prob=0.3)
+            NormalizeIntensityd(keys=["img"], subtrahend=mean, divisor=std, channel_wise=True),
+            RandAdjustContrastd(keys=["img"], prob=0.1, gamma=(0.8, 2.0)),
+            RandGaussianNoised(keys=["img"], prob=0.1, mean=0.0, std=0.05),
+            RandScaleIntensityd(keys=["img"], factors=(0.95, 1.05), prob=0.1),
+            RandShiftIntensityd(keys=["img"], offsets=(-0.05, 0.05), prob=0.1)
         ])
 
     def __call__(self, data):
-        return self.transforms(data)
+        # Accept either dict({"img": tensor}) or a bare tensor/ndarray.
+        if isinstance(data, dict):
+            out = self.transforms(data)
+            return out["img"]
+        else:
+            out = self.transforms({"img": data})
+            return out["img"]
 
 ##########################################
 
@@ -109,6 +129,12 @@ data_module = VerSeDataLoader(
     )
 
 data_module.setup()
+print("Applied pid_corrections (train):", len(getattr(data_module.train_dataset, "pid_corrections", {})))
+# show sample
+for i, (pid, mapping) in enumerate(data_module.train_dataset.pid_corrections.items()):
+    if i >= 10:
+        break
+    print(pid, mapping)
 num_classes = 4
 
 ##########################################
