@@ -54,7 +54,7 @@ system_cleanup()
 gpu_available = setup_gpu()
 
 # specs
-spec_path = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_12102025_2109/spec.json"
+spec_path = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_20072026_0111/spec.json"
 with open(spec_path, "r") as f:
     spec = json.load(f)
 
@@ -67,10 +67,10 @@ spec_data = {
 
 spec["dataset_dir"] = "/home/student/lisa_ma/prepared"
 #spec["train_set_size"] = 0.01  
-spec["batch_size"] = 16  
+spec["batch_size"] = 1
 
 #weights_dir = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_27092025_1811/weights"
-weights_dir = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_12102025_2109/weights"
+weights_dir = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_20072026_0111/weights"
 
 # create results dir
 results_base_dir = os.path.join("results", "glare")

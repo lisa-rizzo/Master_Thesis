@@ -22,11 +22,14 @@ import numpy as np
 
 from sklearn.metrics import accuracy_score, recall_score, f1_score, matthews_corrcoef
 from models.model_densenet import DenseNetModel
-from pytorch_lightning import Trainer
+from pytorch_lightning import Trainer, seed_everything
 from dataloaders.dataloader_VerSe import VerSeDataLoader
 from monai.transforms import Compose, NormalizeIntensityd, RandAdjustContrastd, RandGaussianNoised, RandGaussianSmoothd, RandScaleIntensityd, RandShiftIntensityd, RandSimulateLowResolutiond
 from helper.loss_logger import StepLossLogger
 from pytorch_lightning.loggers import TensorBoardLogger
+
+# C1: reproducibility — fixes weight init, data ordering, and augmentation RNG draws
+seed_everything(42, workers=True)
 
 
 ########## Set specs here ##########
@@ -46,7 +49,7 @@ spec = {
     "dropout_prob": 0.2,
     "noise_level": "rand1",
     "drop_rate": 0.05,
-    "epochs": 15,
+    "epochs": 8,  # ~5 is the GLARE-separation peak in the Oct data; 8 gives margin (scoring window is chosen post-hoc)
     "lr": 1e-4,
     "lr_scheduler": True,
     "lr_end_factor": 0.01,
@@ -54,6 +57,14 @@ spec = {
     "holdout_set_size": 0, # Kein Holdout-Set
     "use_train_for_val": False,
     "train_set_size": 0.8, # Split between train and validation set (entire set - holdout_set) (only relevant if "use_train_for_val" is False)
+    #### Data augmentation (C2: kept in spec so it is logged to spec.json / hparams.yaml for provenance)
+    "augmentations": {
+        "enabled": True,
+        "rand_adjust_contrast": {"prob": 0.1, "gamma": [0.8, 2.0]},
+        "rand_gaussian_noise":  {"prob": 0.1, "mean": 0.0, "std": 0.05},
+        "rand_scale_intensity": {"prob": 0.1, "factors": [0.95, 1.05]},
+        "rand_shift_intensity": {"prob": 0.1, "offsets": [-0.05, 0.05]},
+    },
     #### GLARE settings
     "iterations": 2, # was 2
     "remove_mislabels": True,
@@ -84,15 +95,26 @@ spec_data = {
 ########## Set data augmentation here ##########
 
 class ImageTransform:
-    def __init__(self, mean, std):
-        # dict-based pipeline (keys=["img"])
-        self.transforms = Compose([
+    def __init__(self, mean, std, aug_cfg=None):
+        # Always normalize. Append augmentations only if an aug config is given and enabled.
+        # (C2: augmentation params are read from spec["augmentations"] so they get logged.)
+        transforms = [
             NormalizeIntensityd(keys=["img"], subtrahend=mean, divisor=std, channel_wise=True),
-            RandAdjustContrastd(keys=["img"], prob=0.1, gamma=(0.8, 2.0)),
-            RandGaussianNoised(keys=["img"], prob=0.1, mean=0.0, std=0.05),
-            RandScaleIntensityd(keys=["img"], factors=(0.95, 1.05), prob=0.1),
-            RandShiftIntensityd(keys=["img"], offsets=(-0.05, 0.05), prob=0.1)
-        ])
+        ]
+        if aug_cfg and aug_cfg.get("enabled", False):
+            if "rand_adjust_contrast" in aug_cfg:
+                c = aug_cfg["rand_adjust_contrast"]
+                transforms.append(RandAdjustContrastd(keys=["img"], prob=c["prob"], gamma=tuple(c["gamma"])))
+            if "rand_gaussian_noise" in aug_cfg:
+                c = aug_cfg["rand_gaussian_noise"]
+                transforms.append(RandGaussianNoised(keys=["img"], prob=c["prob"], mean=c["mean"], std=c["std"]))
+            if "rand_scale_intensity" in aug_cfg:
+                c = aug_cfg["rand_scale_intensity"]
+                transforms.append(RandScaleIntensityd(keys=["img"], factors=tuple(c["factors"]), prob=c["prob"]))
+            if "rand_shift_intensity" in aug_cfg:
+                c = aug_cfg["rand_shift_intensity"]
+                transforms.append(RandShiftIntensityd(keys=["img"], offsets=tuple(c["offsets"]), prob=c["prob"]))
+        self.transforms = Compose(transforms)
 
     def __call__(self, data):
         # Accept either dict({"img": tensor}) or a bare tensor/ndarray.
@@ -123,8 +145,8 @@ with open(f"{job_directory}/spec.json", "w") as f:
 ########## Set data module ##########
 data_module = VerSeDataLoader(
         spec=spec,
-        train_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"]),
-        val_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"]),
+        train_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"], aug_cfg=spec.get("augmentations")),
+        val_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"], aug_cfg=None),  # B3: val is NOT augmented — only normalized
         num_workers=6  # Reduziert wegen Speicherproblemen
     )
 

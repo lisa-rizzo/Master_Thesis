@@ -12,39 +12,9 @@ from models.model_densenet import DenseNetModel
 
 pl.seed_everything(42)
 
-def get_final_layer(net):
-    """Get the final classification layer from MONAI DenseNet"""
-    if hasattr(net, 'class_layers'):
-        return net.class_layers
-    else:
-        # Fallback: find the last Linear layer
-        for name, module in reversed(list(net.named_modules())):
-            if isinstance(module, nn.Linear):
-                return module
-        raise ValueError("Could not find final classification layer")
-
-def test_hook(model, layer, input):
-    """Hook to capture latent embeddings from the classification layer"""
-    latent_embeddings = None
-
-    def hook_fn(module, inp, out):
-        nonlocal latent_embeddings
-        latent_embeddings = inp[0].detach()
-
-    hook_handler = layer.register_forward_hook(hook_fn)
-
-    with torch.no_grad():
-        logits = model(input)
-
-    if latent_embeddings is None:
-        raise RuntimeError("Hook did not capture any output.")
-
-    hook_handler.remove()
-    return logits, latent_embeddings
-
 def calculate_gradnorm(models, train_dataloader, device, num_classes):
     scores = {"id": [], "epoch": [], "label": []}
-    
+
     for c in range(num_classes):
         scores[f"c{c}_grad_norm"] = []
 
@@ -55,12 +25,6 @@ def calculate_gradnorm(models, train_dataloader, device, num_classes):
 
         for epoch_idx, net in enumerate(models):
             net.eval()
-            
-            # Get the final classification layer
-            layer = get_final_layer(net)
-            
-            # Get latent embeddings and logits
-            logits, latent_embeddings = test_hook(net, layer, X)
 
             for c in range(num_classes):
                 net.zero_grad()
@@ -75,41 +39,34 @@ def calculate_gradnorm(models, train_dataloader, device, num_classes):
                     scores=scores,
                     loss_fct=CE,
                     device=device,
-                    logits=logits,
-                    latent_embeddings=latent_embeddings,
-                    num_classes=num_classes,
                 )
 
     return pd.DataFrame(scores)
 
-def metrics_for_batch(net, X, labels, ids, epoch, c, scores, loss_fct, device, 
-                     logits, latent_embeddings, num_classes):
-    
+def metrics_for_batch(net, X, labels, ids, epoch, c, scores, loss_fct, device):
+    params = {k: v.detach() for k, v in net.named_parameters()}
+    buffers = {k: v.detach() for k, v in net.named_buffers()}
+
+    def compute_loss(params, buffers, sample, target):
+        sample = sample.unsqueeze(0)
+        target = target.unsqueeze(0)
+        logits = functional_call(net, (params, buffers), (sample,))
+        loss = loss_fct(logits, target)
+        return loss[0]
+
+    ft_compute_sample_grad = vmap(grad(compute_loss), in_dims=(None, None, 0, 0))
     c_tensor = torch.full_like(labels, c).to(device)
+    grads = ft_compute_sample_grad(params, buffers, X, c_tensor)
+    del ft_compute_sample_grad
 
-    # Handle 3D medical image tensor dimensions
-    if len(latent_embeddings.shape) > 2:
-        batch_size = latent_embeddings.shape[0]
-        flattened_features = latent_embeddings.view(batch_size, -1)
-    else:
-        flattened_features = latent_embeddings
-
-    # Closed-form gradient computation
-    diff = nn.functional.softmax(logits, dim=-1) - torch.nn.functional.one_hot(c_tensor, num_classes=num_classes).float()
-    
-    # Compute gradients: [batch, features] x [batch, classes] -> [batch, features, classes]
-    closed_form_grads = torch.einsum("bf,bc->bfc", flattened_features, diff)
-    head_grads = -1 * closed_form_grads.flatten(1, 2)
-    
-    # Process each sample in the batch
-    batch_size = logits.shape[0]
-    for i in range(batch_size):
+    for i in range(len(X)):
         if c == 0:
             scores["id"].append(str(ids[i]))
             scores["epoch"].append(epoch)
             scores["label"].append(int(labels[i].detach().cpu().item()))
 
-        grad_norm = torch.linalg.norm(head_grads[i])
+        grad_i = [grads[name][i].flatten() for name in grads]
+        grad_norm = torch.linalg.norm(torch.cat(grad_i))
         scores[f"c{c}_grad_norm"].append(float(grad_norm.detach().cpu().item()))
 
     return scores

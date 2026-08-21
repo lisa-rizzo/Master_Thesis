@@ -267,25 +267,6 @@ class VerSeDataLoader(pl.LightningDataModule):
         self.val_dataset = VerSeDataset(val_files, transform=self.val_transforms)
         self.val_dataset.pid_corrections = pid_corrections_all
 
-        # Val files
-        val_files, _ = get_data_VerSe.get_filtered_files_across_dsnames(
-            root_dir=self.root_dir,
-            excel_path=self.excel_file,
-            split="val",
-            glob_pattern="*.npz",
-            pid_col="pid",
-            dsname_col="dsname",
-            verts_col="vert_label",
-            check_complete=True,
-            apply_excel_filter=True,
-        )
-        self.val_dataset = VerSeDataset(val_files, transform=self.val_transforms)
-        # compute and attach pid corrections for validation files as well (same filter keys)
-        val_pid_corrections = self._compute_pid_corrections(val_files,
-                                                            target_pids_1820=pid_fix_1820,
-                                                            target_pids_28=pid_fix_28)
-        self.val_dataset.pid_corrections = val_pid_corrections
-
     def train_dataloader(self):
         return DataLoader(
             self.train_dataset,

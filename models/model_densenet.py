@@ -47,9 +47,14 @@ class DenseNetModel(pl.LightningModule):
         self.lr_list = []
 
         self.validation_losses = []
-        self.f1_score = F1Score(task="multiclass", num_classes=num_classes, average='macro') 
-        self.accuracy = Accuracy(task="multiclass", num_classes=num_classes, average='macro')
-        self.mcc = MatthewsCorrCoef(task="multiclass", num_classes=num_classes)
+        # B1: separate metric instances for train vs val (torchmetrics objects are stateful;
+        # sharing one set across phases mixes their accumulation).
+        self.train_f1  = F1Score(task="multiclass", num_classes=num_classes, average='macro')
+        self.val_f1    = F1Score(task="multiclass", num_classes=num_classes, average='macro')
+        self.train_acc = Accuracy(task="multiclass", num_classes=num_classes, average='macro')
+        self.val_acc   = Accuracy(task="multiclass", num_classes=num_classes, average='macro')
+        self.train_mcc = MatthewsCorrCoef(task="multiclass", num_classes=num_classes)
+        self.val_mcc   = MatthewsCorrCoef(task="multiclass", num_classes=num_classes)
 
         self.save_hyperparameters()
 
@@ -62,15 +67,17 @@ class DenseNetModel(pl.LightningModule):
         loss, logits, logits_softmax = self._shared_step(X, labels)
         preds = torch.argmax(logits, dim=1)
 
-        f1 = self.f1_score(preds, labels)
-        acc = self.accuracy(preds, labels)
-        mcc = self.mcc(preds, labels)
+        # B2: accumulate over the whole epoch — log the metric OBJECT so Lightning
+        # computes the true epoch-level macro metric and resets it (not a noisy per-batch value).
+        self.train_f1.update(preds, labels)
+        self.train_acc.update(preds, labels)
+        self.train_mcc.update(preds, labels)
 
-        self.log("train_loss", loss.detach().cpu(), prog_bar=False, on_epoch=True)
+        self.log("train_loss", loss.detach().cpu(), prog_bar=False, on_step=False, on_epoch=True)
         self.log("lr", self._get_current_lr(), prog_bar=True, on_epoch=True)
-        self.log("train_f1", f1.detach().cpu(), prog_bar=False, on_epoch=True)
-        self.log("train_accuracy", acc.detach().cpu(), prog_bar=False, on_epoch=True)
-        self.log("train_mcc", mcc.detach().cpu(), prog_bar=False, on_epoch=True)
+        self.log("train_f1", self.train_f1, prog_bar=False, on_step=False, on_epoch=True)
+        self.log("train_accuracy", self.train_acc, prog_bar=False, on_step=False, on_epoch=True)
+        self.log("train_mcc", self.train_mcc, prog_bar=False, on_step=False, on_epoch=True)
         return loss
 
     def on_train_epoch_end(self, *args, **kwargs):
@@ -88,14 +95,15 @@ class DenseNetModel(pl.LightningModule):
         loss, logits, logits_softmax = self._shared_step(X, labels)
         preds = torch.argmax(logits, dim=1)
 
-        f1 = self.f1_score(preds, labels)
-        acc = self.accuracy(preds, labels)
-        mcc = self.mcc(preds, labels)
+        # B1/B2: use the val-only metric objects, accumulated over the epoch.
+        self.val_f1.update(preds, labels)
+        self.val_acc.update(preds, labels)
+        self.val_mcc.update(preds, labels)
 
-        self.log("val_loss", loss.detach().cpu(), prog_bar=True, on_epoch=True)
-        self.log("val_f1", f1.detach().cpu(), prog_bar=True, on_epoch=True)
-        self.log("val_accuracy", acc.detach().cpu(), prog_bar=True, on_epoch=True)
-        self.log("val_mcc", mcc.detach().cpu(), prog_bar=True, on_epoch=True)
+        self.log("val_loss", loss.detach().cpu(), prog_bar=True, on_step=False, on_epoch=True)
+        self.log("val_f1", self.val_f1, prog_bar=True, on_step=False, on_epoch=True)
+        self.log("val_accuracy", self.val_acc, prog_bar=True, on_step=False, on_epoch=True)
+        self.log("val_mcc", self.val_mcc, prog_bar=True, on_step=False, on_epoch=True)
         return loss
 
     def configure_optimizers(self):
