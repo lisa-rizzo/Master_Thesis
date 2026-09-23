@@ -163,3 +163,4 @@ figures/
 thesis_images/*.png
 
 *.ipynb
+!evaluation/*.ipynb
