@@ -23,7 +23,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, recall_score, f1_score, matthews_corrcoef
 from models.model_densenet import DenseNetModel
 from pytorch_lightning import Trainer, seed_everything
-from dataloaders.dataloader_VerSe import VerSeDataLoader
+from dataloaders.dataloader_VerSe_new import VerSeDataLoader
 from monai.transforms import Compose, NormalizeIntensityd, RandAdjustContrastd, RandGaussianNoised, RandGaussianSmoothd, RandScaleIntensityd, RandShiftIntensityd, RandSimulateLowResolutiond
 from helper.loss_logger import StepLossLogger
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -37,7 +37,7 @@ seed_everything(42, workers=True)
 spec = {
     "directory": "results/VerSe_classifier",
     "dataset_dir": "/home/student/lisa_ma/prepared",  
-    "job_name": "test_glare", #glarex
+    "job_name": "label_override_8ep",
     #### Model training settings
     "model": "densenet169",  # DenseNet variant
     "pretrained": False,  # MONAI DenseNet doesn't have pretrained weights for 3D medical
@@ -49,7 +49,7 @@ spec = {
     "dropout_prob": 0.2,
     "noise_level": "rand1",
     "drop_rate": 0.05,
-    "epochs": 4,
+    "epochs": 8,
     "lr": 1e-4,
     "lr_scheduler": True,
     "lr_end_factor": 0.01,

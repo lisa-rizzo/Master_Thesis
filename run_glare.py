@@ -1,5 +1,5 @@
 from glare import compute_glare
-from dataloaders.dataloader_VerSe import VerSeDataLoader
+from dataloaders.dataloader_VerSe_new import VerSeDataLoader
 from helper.arguments import get_parameter
 from monai.transforms import Compose, NormalizeIntensity
 import json

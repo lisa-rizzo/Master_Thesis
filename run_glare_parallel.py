@@ -25,7 +25,7 @@ import psutil
 import torch
 import torch.multiprocessing as mp
 
-from dataloaders.dataloader_VerSe import VerSeDataLoader
+from dataloaders.dataloader_VerSe_new import VerSeDataLoader
 from glare import calculate_gradnorm, calculate_glare
 from helper.arguments import get_parameter
 from models.model_densenet import DenseNetModel
