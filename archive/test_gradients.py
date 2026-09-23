@@ -1,4 +1,4 @@
-from glare import compute_glare
+from archive.glare_resnet import compute_glare
 from glare_clean.dataloaders.dataloader_VerSe import VerSeDataLoader
 import torch
 

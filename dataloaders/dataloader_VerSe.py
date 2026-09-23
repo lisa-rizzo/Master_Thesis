@@ -211,6 +211,7 @@ class VerSeDataLoader(pl.LightningDataModule):
             verts_col="vert_label",
             check_complete=True,
             apply_excel_filter=True,
+            extra_sacral_verts=frozenset(),  # extra S2-S4 disabled for this experiment
         )
         print(f"Collected {len(files)} training files.")
         if missing:
@@ -235,6 +236,7 @@ class VerSeDataLoader(pl.LightningDataModule):
             verts_col="vert_label",
             check_complete=True,
             apply_excel_filter=True,
+            extra_sacral_verts=frozenset(),  # extra S2-S4 disabled for this experiment
         )
 
         # read optional pid lists from spec (expect lists of strings)

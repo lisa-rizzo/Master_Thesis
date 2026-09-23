@@ -157,6 +157,7 @@ background_info/
 evaluation/full_comparison_*.xlsx
 evaluation/mislabels_comparison_*.xlsx
 evaluation/old_evaluation/
+figures/
 
 # Regenerable thesis figures (produced by thesis_images/visualize_*.py)
 thesis_images/*.png

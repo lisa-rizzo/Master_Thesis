@@ -49,7 +49,7 @@ spec = {
     "dropout_prob": 0.2,
     "noise_level": "rand1",
     "drop_rate": 0.05,
-    "epochs": 8,  # ~5 is the GLARE-separation peak in the Oct data; 8 gives margin (scoring window is chosen post-hoc)
+    "epochs": 4,
     "lr": 1e-4,
     "lr_scheduler": True,
     "lr_end_factor": 0.01,
@@ -72,7 +72,7 @@ spec = {
     "method": "glarex",
     "threshold_fraction": 0.1
 }
-pid_json_path = "/home/student/lisa_ma/pid_corrections.json"
+pid_json_path = "/home/student/lisa_ma/datasets/VerSe/pid_corrections.json"
 if os.path.isfile(pid_json_path):
     try:
         with open(pid_json_path, "r") as f:

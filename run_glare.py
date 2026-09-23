@@ -1,4 +1,4 @@
-from glare_test import compute_glare
+from glare import compute_glare
 from dataloaders.dataloader_VerSe import VerSeDataLoader
 from helper.arguments import get_parameter
 from monai.transforms import Compose, NormalizeIntensity
@@ -54,7 +54,7 @@ system_cleanup()
 gpu_available = setup_gpu()
 
 # specs
-spec_path = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_20072026_0111/spec.json"
+spec_path = "/home/student/lisa_ma/results/classifier/test_glare_22092026_0151/spec.json"
 with open(spec_path, "r") as f:
     spec = json.load(f)
 
@@ -70,7 +70,7 @@ spec["dataset_dir"] = "/home/student/lisa_ma/prepared"
 spec["batch_size"] = 1
 
 #weights_dir = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_27092025_1811/weights"
-weights_dir = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_20072026_0111/weights"
+weights_dir = "/home/student/lisa_ma/results/classifier/test_glare_22092026_0151/weights"
 
 # create results dir
 results_base_dir = os.path.join("results", "glare")

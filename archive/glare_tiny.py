@@ -1,4 +1,4 @@
-from glare_test import compute_glare
+from glare import compute_glare
 from dataloaders.dataloader_VerSe import VerSeDataLoader
 from helper.arguments import get_parameter
 from monai.transforms import Compose, NormalizeIntensity

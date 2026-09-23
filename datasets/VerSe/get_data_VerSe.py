@@ -96,10 +96,25 @@ def get_filtered_files_across_dsnames(
     verts_col: str = "vert_label",
     check_complete: bool = True,
     apply_excel_filter: bool = True,
+    # ── Extra sacral vertebrae (S2-S4) ──────────────────────────────────────
+    # VerSe scans contain S2-S4 patches on disk (vert26, vert27, vert29) that
+    # are not listed in the Excel vert_label column. Setting extra_sacral_verts
+    # to frozenset({26, 27, 29}) loads them in addition to the Excel whitelist,
+    # increasing the Sacral class from ~55 to ~249 patches in the train split.
+    #
+    # To DISABLE this extension and revert to Excel-only loading, change the
+    # default back to frozenset() or pass extra_sacral_verts=frozenset() at the
+    # call site in dataloader_VerSe.py.
+    #
+    # vert28 is intentionally excluded: it means T13 (extra thoracic) in
+    # inhouse scans and is handled separately via pid_corrections.
+    extra_sacral_verts: frozenset = frozenset({26, 27, 29}),
 ):
     """
     Scans all dsname subdirectories under root_dir, enters <dsname>/<split>/,
     collects .npz files whose (pid, vert) match Excel constraints.
+    Files with verts in extra_sacral_verts are also collected for any known PID,
+    even if those verts are absent from the Excel vert_label whitelist.
     Returns:
       files: list[Path]
       missing: dict[dsname][pid] -> sorted list of missing vertebra ids
@@ -136,7 +151,7 @@ def get_filtered_files_across_dsnames(
             if pid is None or vert is None:
                 continue
             # EXACT match with Excel pid (full token after sub-)
-            if pid in pid_vert_map and vert in pid_vert_map[pid]:
+            if pid in pid_vert_map and (vert in pid_vert_map[pid] or vert in extra_sacral_verts):
                 collected.append(p)
                 found_verts_per_pid[pid].add(vert)
 

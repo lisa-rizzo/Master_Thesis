@@ -3,10 +3,8 @@ Generate a vertebra-specific comparison table of GLARE scores against ground-tru
 
 Outputs an Excel file with all original columns plus:
   - mislabel_origin ("Confirmed mislabel" = in both GT and GLARE data, "Confirmed (not in training data)" =
-    GT-flagged but absent from the training run, "mislabels from the original scan labels" = anomaly visible
-    directly in the original per-scan vertebra numbering (gap/insertion pattern), not (yet) confirmed by GT,
-    "" = not flagged as a mislabel)
-  - true_anomaly_label (correct vertebra label from GT: 20 for vert 19 mislabels, 28 for vert 20 mislabels)
+    GT-flagged but absent from the training run, "" = not flagged as a mislabel)
+  - true_anomaly_label (original vert number before pid_corrections: 20 for vert 19 mislabels, 28 for vert 20 mislabels)
   - class / alternative_class (glare) are written out as anatomical region names
     (Cervical/Thoracic/Lumbar/Sacral) rather than the underlying 0-3 codes.
   - Final column headers: id, counted_vert_number, counted_vert_name, mislabel_origin,
@@ -15,14 +13,9 @@ Outputs an Excel file with all original columns plus:
 
 Rows where mislabel_origin == ORIGIN_CONFIRMED are colored green.
 
-Ground-truth mislabel identification:
-- T11 == "1": vertebra 19 is mislabeled (gt_label=20), vertebra 24 is mislabeled (gt_label=24)
-- T13 == "1": vertebra 20 is mislabeled (gt_label=28), vertebra 25 is mislabeled (gt_label=25)
-- LabelOverride: compare the actual vertebra-number sequence against the expert-corrected override sequence; mark the first differing vertebra and all subsequent vertebrae that remain shifted, using the override's value as gt_label
-
-Remove labels from training (only "train" subset):
-- Rows 2-13: T12 missing → vertebrae 19 (gt_label=20) and 24 (gt_label=24) are mislabeled
-- Rows 15-21: T13 missing → vertebrae 20 (gt_label=28) and 25 (gt_label=25) are mislabeled
+Ground-truth source: gt_mislabels_complete.xlsx
+  - T12_missing: vertebra 19 is mislabeled (gt_label=20), vertebra 24 is mislabeled (gt_label=25)
+  - T13_extra:   vertebra 20 is mislabeled (gt_label=28), vertebra 25 is mislabeled (gt_label=24)
 """
 from pathlib import Path
 import pandas as pd
@@ -37,9 +30,8 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("compare_mislabels")
 
 # File paths
-MISLABELS_CSV = Path("/home/student/lisa_ma/results/glare/13-10-25_15:18_ep-15_single-gpu/mislabels_list_20251013_151808.csv")
-GT_EXCEL = Path("/home/student/lisa_ma/evaluation/A_CT_ANOMALY_LABELv9.xlsx")
-REMOVE_LABELS_EXCEL = Path("/home/student/lisa_ma/datasets/VerSe/remove_labels_from_training.xlsx")
+MISLABELS_CSV = Path("/home/student/lisa_ma/results/glare/22-08-26_11:28_ep-15_dual-gpu/results/mislabels_list_20260822_112835.csv")
+GT_EXCEL = Path("/home/student/lisa_ma/evaluation/gt_mislabels_complete.xlsx")
 DATA_FILTER_EXCEL = Path("/home/student/lisa_ma/datasets/VerSe/data_filter_joined.xlsx")
 OUTPUT_DIR = Path("/home/student/lisa_ma/evaluation")
 
@@ -459,26 +451,16 @@ def add_legend_sheet(wb, stats=None, generated_from=None):
     categories = [
         ("(blank)", "Not flagged as a mislabel by any source - treated as clean/correctly labeled."),
         (ORIGIN_CONFIRMED,
-            "The strongest category: from the independent review excel, or an explicit corrected vertebra "
-            "sequence in LabelOverride - typically based on counting ribs on the CT (since thoracic vertebrae "
-            "carry ribs and lumbar/cervical don't) has confirmed this exact vertebra is really mislabeled. It was "
-            "also part of the training run GLARE analyzed, so it has a real glare score. These are the rows to "
-            "use for judging GLARE itself: does a low glare_score / does the alternative_class actually line up "
-            "with true_anomaly_label for these confirmed cases?"),
+            "The strongest category: from gt_mislabels_complete.xlsx, which lists all vertebrae that receive "
+            "a wrong region label in training due to pid_corrections (top-down counting applied for T12-missing "
+            "and T13-extra transitional anatomy cases). The vertebra was also part of the training run GLARE "
+            "analyzed, so it has a real glare score. These are the rows to use for judging GLARE itself: does "
+            "a low glare_score / does the alternative_class actually line up with true_anomaly_label?"),
         (ORIGIN_GT_ONLY,
-            "Also confirmed as a real mislabel by the same review as above - but this vertebra was never part of "
-            "the training run GLARE analyzed (e.g. it's in the validation/test data split, or it was excluded by "
-            "the has_T1/is_consecutive data filters before training even started). Because GLARE never saw this "
-            "sample, there is no glare score to check - the blank cells here are expected, not missing data. "
-            "These rows exist to show how much of the confirmed ground truth the current pipeline can even "
-            "evaluate, not to judge GLARE's performance."),
-        (ORIGIN_CORRECTION_ONLY,
-            "Stem from the vertebra numbers that were already assigned to the scans. Means that the label was "
-            "changed for training when countin from the top.\n\n"
-            "If the sequence jumps straight from 18 to 20, skipping 19 entirely -> gap is the fingerprint of "
-            '"T12 was never labeled for this patient" (i.e. it\'s missing) \n\n'
-            "If an extra number, 28, is inserted right after 19, before the sequence continues normally at 20 -> "
-            ' means "there\'s an extra thoracic vertebra here" '),
+            "Also confirmed as a real mislabel by gt_mislabels_complete.xlsx - but this vertebra was never part "
+            "of the training run GLARE analyzed (e.g. it's in the validation/test data split, or it was excluded "
+            "by the has_T1/is_consecutive data filters before training even started). Because GLARE never saw "
+            "this sample, there is no glare score to check - the blank cells here are expected, not missing data."),
     ]
     for name, desc in categories:
         write_row(row, name, desc)
@@ -490,8 +472,6 @@ def add_legend_sheet(wb, stats=None, generated_from=None):
     write_row(row, "Green", ORIGIN_CONFIRMED, fill=GREEN_FILL)
     row += 1
     write_row(row, "Amber", ORIGIN_GT_ONLY, fill=GT_ONLY_FILL)
-    row += 1
-    write_row(row, "Blue", ORIGIN_CORRECTION_ONLY, fill=GLARE_ONLY_FILL)
 
 
 def add_statistics_sheet(wb, stats):
@@ -602,9 +582,6 @@ def main():
     if not GT_EXCEL.exists():
         log.error("Ground-truth Excel not found: %s", GT_EXCEL)
         return
-    if not REMOVE_LABELS_EXCEL.exists():
-        log.error("Remove labels Excel not found: %s", REMOVE_LABELS_EXCEL)
-        return
 
     log.info("Reading mislabels CSV (full dataset): %s", MISLABELS_CSV)
     df_mis = pd.read_csv(MISLABELS_CSV, dtype=str, keep_default_na=False)
@@ -614,122 +591,42 @@ def main():
     df_gt = pd.read_excel(GT_EXCEL, dtype=str, keep_default_na=False)
     log.info("Ground-truth rows: %d", len(df_gt))
 
-    log.info("Reading remove labels Excel: %s", REMOVE_LABELS_EXCEL)
-    df_remove = pd.read_excel(REMOVE_LABELS_EXCEL, dtype=str, keep_default_na=False)
-    log.info("Remove labels rows: %d", len(df_remove))
-
     log.info("Reading training data-filter sheet: %s", DATA_FILTER_EXCEL)
     df_data_filter = load_data_filter(DATA_FILTER_EXCEL)
     log.info("Data-filter rows: %d", len(df_data_filter))
 
-    # Build vertebra-specific ground-truth mislabel set with correct labels
-    # Format: dict {(pid, vertebra_number): gt_label}
+    # Build vertebra-specific ground-truth mislabel set from gt_mislabels_complete.xlsx.
+    # Format: {(pid, vert_num): gt_label}  where gt_label is the original (pre-correction) vert number.
     gt_mislabeled_verts = {}
 
     for _, row in df_gt.iterrows():
-        pid = str(row["fid"]).strip()
-        if not pid:
-            continue
+        pid = str(row["pid"]).strip()
+        vert_id = int(row["vert_id"])
+        anomaly_type = str(row.get("anomaly_type", "")).strip()
 
-        # Check T11 flag - vertebrae 19 and 24 are mislabeled
-        if row.get("T11") == "1":
-            gt_mislabeled_verts[(pid, 19)] = "20"  # Vertebra 19 → gt_label 20
-            gt_mislabeled_verts[(pid, 24)] = "24"  # Vertebra 24 → gt_label 24
-            log.debug("T11=1 for %s: marking vert 19 (gt=20), vert 24 (gt=24)", pid)
+        # Derive the true vert number (before pid_corrections shifted it):
+        # T12_missing Rule B shifted verts >=20 down by 1  → true vert = vert_id + 1
+        # T13_extra  Rule A shifted vert28→20             → true vert = 28
+        #            Rule A shifted vert24→25             → true vert = 24
+        if anomaly_type == "T12_missing":
+            gt_label = str(vert_id + 1)
+        elif anomaly_type == "T13_extra":
+            if vert_id == 20:
+                gt_label = "28"
+            elif vert_id == 25:
+                gt_label = "24"
+            else:
+                gt_label = str(vert_id)
+        else:
+            gt_label = str(vert_id)
 
-        # Check T13 flag - vertebrae 20 and 25 are mislabeled
-        if row.get("T13") == "1":
-            gt_mislabeled_verts[(pid, 20)] = "28"  # Vertebra 20 → gt_label 28
-            gt_mislabeled_verts[(pid, 25)] = "25"  # Vertebra 25 → gt_label 25
-            log.debug("T13=1 for %s: marking vert 20 (gt=28), vert 25 (gt=25)", pid)
-        
-        # Check LabelOverride
-        override_label = row.get("LabelOverride", "")
-        if override_label and str(override_label).strip() and str(override_label).strip().lower() != "nan":
-            # Load training labels for this PID from mislabels CSV
-            pid_rows = df_mis[df_mis["id"].str.contains(f"^{re.escape(pid)}_vert", regex=True, na=False)]
+        gt_mislabeled_verts[(pid, vert_id)] = gt_label
+        log.debug("%s for %s: marking vert %d (gt=%s)", anomaly_type, pid, vert_id, gt_label)
 
-            if len(pid_rows) > 0:
-                # Get all vertebra numbers present for this PID, sorted
-                training_verts = set()
-                for _, mis_row in pid_rows.iterrows():
-                    _, vert_num = parse_pid_and_vert(mis_row["id"])
-                    if vert_num is not None:
-                        training_verts.add(vert_num)
+    log.info("Ground-truth mislabeled vertebrae: %d", len(gt_mislabeled_verts))
 
-                if training_verts:
-                    sorted_verts = sorted(training_verts)
-                    override_verts = parse_vertebra_list(override_label)
-
-                    # Compare the actual vertebra-number sequence against the
-                    # expert-corrected override sequence
-                    mislabeled_positions = compare_label_sequences(sorted_verts, override_verts)
-
-                    # Convert positions to actual vertebra numbers, using the
-                    # override sequence's own value as the corrected label
-                    for pos in mislabeled_positions:
-                        if pos < len(sorted_verts) and pos < len(override_verts):
-                            actual_vert_num = sorted_verts[pos]
-                            corrected_label = str(override_verts[pos])
-                            gt_mislabeled_verts[(pid, actual_vert_num)] = corrected_label
-                            log.debug("LabelOverride for %s: marking vert %d (gt=%s)",
-                                    pid, actual_vert_num, corrected_label)
-
-    log.info("Ground-truth mislabeled vertebrae (vertebra-specific): %d", len(gt_mislabeled_verts))
-
-    # Build removed labels mislabel set (only from training data)
-    # Rows 2-13 (Excel 1-indexed, so pandas index 1-12): T12 missing → verts 19, 24
-    # Rows 15-21 (pandas index 14-20): T13 missing → verts 20, 25
-    removed_labels_verts = {}  # {(pid, vert_num): gt_label}
-
-    # Get the column name for PIDs
-    pid_col = None
-    for col in df_remove.columns:
-        if 'fid' in col.lower() or 'id' in col.lower() or col == df_remove.columns[0]:
-            pid_col = col
-            break
-    
-    if pid_col is None:
-        pid_col = df_remove.columns[0]
-    
-    log.info("Using column '%s' for PIDs in remove labels Excel", pid_col)
-    
-    # Check if there's a column indicating train/test/val split
-    split_col = None
-    for col in df_remove.columns:
-        if 'split' in col.lower() or 'set' in col.lower() or 'subset' in col.lower():
-            split_col = col
-            break
-    
-    # Process rows 2-13 (pandas index 1-12) - T12 missing
-    for idx in range(1, min(13, len(df_remove))):
-        row = df_remove.iloc[idx]
-        
-        # Check if this is a training sample
-        if split_col and str(row.get(split_col, "")).strip().lower() != "train":
-            continue
-        
-        pid = str(row[pid_col]).strip()
-        if pid and pid.lower() != "nan":
-            removed_labels_verts[(pid, 19)] = "20"
-            removed_labels_verts[(pid, 24)] = "24"
-            log.debug("Remove labels (T12, train) for %s: marking verts 19, 24", pid)
-    
-    # Process rows 15-21 (pandas index 14-20) - T13 missing
-    for idx in range(14, min(21, len(df_remove))):
-        row = df_remove.iloc[idx]
-        
-        # Check if this is a training sample
-        if split_col and str(row.get(split_col, "")).strip().lower() != "train":
-            continue
-        
-        pid = str(row[pid_col]).strip()
-        if pid and pid.lower() != "nan":
-            removed_labels_verts[(pid, 20)] = "28"
-            removed_labels_verts[(pid, 25)] = "25"
-            log.debug("Remove labels (T13, train) for %s: marking verts 20, 25", pid)
-    
-    log.info("Removed labels mislabeled vertebrae (train only): %d", len(removed_labels_verts))
+    # No separate removed_labels set — gt_mislabels_complete is the single source of truth.
+    removed_labels_verts = {}
 
     # Process each row in the full dataset
     output_rows = []

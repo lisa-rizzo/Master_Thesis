@@ -4,7 +4,7 @@ Script to launch training with GLARE(x)
 
 from models.model import Model
 from dataloaders.CIFAR10DataLoader import CIFAR10DataLoader
-from glare import compute_glare
+from archive.glare_resnet import compute_glare
 from helper.arguments import get_parameter
 
 from monai.transforms import (
