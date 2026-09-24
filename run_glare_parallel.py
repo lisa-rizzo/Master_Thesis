@@ -96,7 +96,7 @@ def main():
         )
 
     # ── Config ────────────────────────────────────────────────────────────
-    spec_path = "/home/student/lisa_ma/results/VerSe_classifier/test_glare_21082026_2132/spec.json"
+    spec_path = "/home/student/lisa_ma/results/VerSe_classifier/label_override_8ep_23092026_2135/spec.json"
     with open(spec_path) as f:
         spec = json.load(f)
 
