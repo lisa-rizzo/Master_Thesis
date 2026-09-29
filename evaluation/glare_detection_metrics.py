@@ -29,6 +29,10 @@ OUTPUT_DIR     = Path("/home/student/lisa_ma/evaluation")
 
 MAX_SCORE      = 15  # number of training epochs
 
+# Optional: set to the vog_scores_*.csv produced by run_vog.py to include
+# VOG metrics in the output.  Set to None to skip VOG evaluation.
+VOG_CSV = None  # e.g. Path("/home/student/lisa_ma/results/vog/20261001_120000/vog_scores_20261001_120000.csv")
+
 
 def compute_auroc_ap(y_true, scores):
     """AUROC and Average Precision from GLARE scores (lower = more suspicious)."""
@@ -37,6 +41,14 @@ def compute_auroc_ap(y_true, scores):
     inverted = MAX_SCORE - scores
     auroc = roc_auc_score(y_true, inverted)
     ap    = average_precision_score(y_true, inverted)
+    return auroc, ap
+
+
+def compute_auroc_ap_vog(y_true, vog_scores):
+    """AUROC and Average Precision from VOG scores (higher = more suspicious)."""
+    from sklearn.metrics import roc_auc_score, average_precision_score
+    auroc = roc_auc_score(y_true, vog_scores)
+    ap    = average_precision_score(y_true, vog_scores)
     return auroc, ap
 
 
@@ -133,12 +145,46 @@ def main():
         auroc, ap = float("nan"), float("nan")
         log.warning("Could not compute AUROC/AP: %s", e)
 
+    # ── VOG scores (optional) ────────────────────────────────────────────────
+    vog_auroc, vog_ap = float("nan"), float("nan")
+    if VOG_CSV is not None and Path(VOG_CSV).is_file():
+        try:
+            df_vog = pd.read_csv(VOG_CSV, dtype=str, keep_default_na=False)
+            df_vog["vog_score"] = pd.to_numeric(df_vog["vog_score"], errors="coerce")
+            df_vog = df_vog.dropna(subset=["vog_score"])
+            df_full = df_full.merge(
+                df_vog[["id", "vog_score"]], on="id", how="left"
+            )
+            n_matched = df_full["vog_score"].notna().sum()
+            log.info("VOG scores matched: %d / %d samples", n_matched, total)
+
+            vog_mask = df_full["vog_score"].notna()
+            vog_auroc, vog_ap = compute_auroc_ap_vog(
+                df_full.loc[vog_mask, "is_mislabel"].values,
+                df_full.loc[vog_mask, "vog_score"].values,
+            )
+            log.info("VOG AUROC: %.4f  |  VOG Average Precision: %.4f", vog_auroc, vog_ap)
+        except Exception as e:
+            log.warning("Could not load/compute VOG metrics: %s", e)
+    else:
+        if VOG_CSV is not None:
+            log.warning("VOG_CSV set but file not found: %s", VOG_CSV)
+
     # ── Ranked list of lowest-scoring samples ────────────────────────────────
-    df_ranked = df_full.sort_values("glare_score")[
-        ["id", "label", "glare score", "alternative class (glare)", "is_mislabel"]
-    ].copy()
-    df_ranked.columns = ["id", "training_class_code", "glare_score",
-                         "alternative_class_code", "is_true_positive"]
+    rank_cols = ["id", "label", "glare score", "alternative class (glare)", "is_mislabel"]
+    rename_map = {
+        "id": "id",
+        "label": "training_class_code",
+        "glare score": "glare_score",
+        "alternative class (glare)": "alternative_class_code",
+        "is_mislabel": "is_true_positive",
+    }
+    if "vog_score" in df_full.columns:
+        rank_cols.append("vog_score")
+        rename_map["vog_score"] = "vog_score"
+
+    df_ranked = df_full.sort_values("glare_score")[rank_cols].copy()
+    df_ranked = df_ranked.rename(columns=rename_map)
     df_ranked["is_true_positive"] = df_ranked["is_true_positive"].astype(bool)
 
     # ── Write Excel ──────────────────────────────────────────────────────────
@@ -159,16 +205,23 @@ def main():
         df_metrics_out[cols].to_excel(writer, sheet_name="Threshold_Metrics", index=False)
 
         # Summary sheet
-        summary = pd.DataFrame([
+        summary_rows = [
             ("Total samples", total),
             ("Region-crossing positives (in training)", n_pos),
             ("Negatives", n_neg),
             ("Base rate (%)", round(100 * n_pos / total, 4)),
             ("", ""),
-            ("AUROC", round(auroc, 4)),
-            ("Average Precision", round(ap, 4)),
+            ("GLARE AUROC", round(auroc, 4)),
+            ("GLARE Average Precision", round(ap, 4)),
             ("Max score (epochs)", MAX_SCORE),
-        ], columns=["Metric", "Value"])
+        ]
+        if not (vog_auroc != vog_auroc):  # not NaN
+            summary_rows += [
+                ("", ""),
+                ("VOG AUROC", round(vog_auroc, 4)),
+                ("VOG Average Precision", round(vog_ap, 4)),
+            ]
+        summary = pd.DataFrame(summary_rows, columns=["Metric", "Value"])
         summary.to_excel(writer, sheet_name="Summary", index=False)
 
         # Ranked list (top 500 most suspicious)

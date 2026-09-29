@@ -2,6 +2,7 @@ import pytorch_lightning as pl
 from torch.utils.data import DataLoader, random_split, Dataset
 import torch
 import numpy as np
+import pandas as pd
 import datasets.VerSe.get_data_VerSe_new as get_data_VerSe
 from pathlib import Path
 import re
@@ -19,6 +20,7 @@ class VerSeDataset(Dataset):
         self.file_paths = file_paths
         self.transform = transform
         self.pid_corrections = {}
+        self.gt_label_corrections: dict[str, int] = {}  # sample_id -> class int, for upper-bound training
 
     def __len__(self):
         return len(self.file_paths)
@@ -41,6 +43,8 @@ class VerSeDataset(Dataset):
 
         label = self.get_region_label_from_vert(corrected_vert)
         sample_id = f"{pid}_vert{corrected_vert}"
+        if sample_id in self.gt_label_corrections:
+            label = self.gt_label_corrections[sample_id]
         return image_tensor, label, sample_id
     
     @staticmethod
@@ -292,20 +296,30 @@ class VerSeDataLoader(pl.LightningDataModule):
                     break
 
         # LabelOverride: Step 1 (positional remap) + Step 2 (Rule A/B on new sequence)
-        lo_step1 = get_data_VerSe.load_label_override_step1(
-            filter_excel_path=self.excel_file,
-            anomaly_excel_path=self.anomaly_excel_path,
-        )
-        if lo_step1:
-            lo_composed = {
-                pid: self._compose_override_with_rules(step1_map)
-                for pid, step1_map in lo_step1.items()
-            }
-            print(f"LabelOverride + rules applied for {len(lo_composed)} PID(s):")
-            for pid, mapping in lo_composed.items():
-                changes = {d: c for d, c in mapping.items() if d != c}
-                print(f"  {pid}: {changes if changes else '(identity)'}")
-            pid_corrections_all.update(lo_composed)
+        if self.spec.get("use_label_override", True):
+            lo_step1 = get_data_VerSe.load_label_override_step1(
+                filter_excel_path=self.excel_file,
+                anomaly_excel_path=self.anomaly_excel_path,
+            )
+            if lo_step1:
+                lo_composed = {
+                    pid: self._compose_override_with_rules(step1_map)
+                    for pid, step1_map in lo_step1.items()
+                }
+                print(f"LabelOverride + rules applied for {len(lo_composed)} PID(s):")
+                for pid, mapping in lo_composed.items():
+                    changes = {d: c for d, c in mapping.items() if d != c}
+                    print(f"  {pid}: {changes if changes else '(identity)'}")
+                pid_corrections_all.update(lo_composed)
+        else:
+            print("LabelOverride disabled (use_label_override=False).")
+
+        # ---- exclude samples for GLARE remove strategy ----
+        exclude_ids = set(self.spec.get("exclude_sample_ids", []))
+        if exclude_ids:
+            n_before = len(files)
+            files = [f for f in files if Path(f).stem not in exclude_ids]
+            print(f"Excluded {n_before - len(files)} samples from training set ({len(files)} remaining).")
 
         # ---- attach the same computed corrections to both dataset instances ----
         self.train_dataset = VerSeDataset(files, transform=self.train_transforms)
@@ -313,6 +327,19 @@ class VerSeDataLoader(pl.LightningDataModule):
 
         self.val_dataset = VerSeDataset(val_files, transform=self.val_transforms)
         self.val_dataset.pid_corrections = pid_corrections_all
+
+        # ---- GT label overrides (upper-bound training only) ----
+        gt_corrections_path = self.spec.get("gt_corrections_path")
+        if gt_corrections_path:
+            _CLASS_TO_INT = {"Cervical": 0, "Thoracic": 1, "Lumbar": 2, "Sacral": 3}
+            gt_df = pd.read_excel(gt_corrections_path)
+            overrides = {
+                row["sample_id"]: _CLASS_TO_INT[row["true_class"]]
+                for _, row in gt_df.iterrows()
+                if row["true_class"] in _CLASS_TO_INT
+            }
+            self.train_dataset.gt_label_corrections = overrides
+            print(f"GT label corrections loaded: {len(overrides)} entries from {gt_corrections_path}")
 
     def train_dataloader(self):
         return DataLoader(

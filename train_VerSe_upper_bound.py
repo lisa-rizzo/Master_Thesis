@@ -1,15 +1,6 @@
 """
-Script to launch training with MONAI DenseNet for 3D mediclass ImageTransform:
-    def __init__(self, mean, std):
-        self.transforms = Compose([
-            NormalizeIntensity(subtrahend=mean, divisor=std, channel_wise=True),
-          #  RandSimulateLowResolutiond(keys=["img"], zoom_range=(0.5, 1.0), prob=1.0),
-         #   RandAdjustContrastd(keys=["img"], prob=0.5, gamma=(0.7, 1.5)),
-         #   RandGaussiannoised(keys=["img"], prob=0.5, mean=0.0, std=0.1),
-        #    RandGaussianSmoothd(keys=["img"], prob=0.5, sigma_x=(0.5, 1.5), sigma_y=(0.5, 1.5), sigma_z=(0.5, 1.5)), #Weichzeichnung
-         #   RandscaleIntensityd(keys=["img"], factors=0.1, prob=0.5),
-          #  RandShiftIntensityd(keys=["img"], offsets=0.1, prob=0.5)
-        ])
+Upper-bound training: same config as label_override_8ep but with all 109 GT mislabels
+corrected via label_overrides. Used as the theoretical ceiling for GLARE evaluation.
 """
 
 import os
@@ -36,17 +27,17 @@ seed_everything(42, workers=True)
 ########## Set specs here ##########
 
 spec = {
-    "directory": "results/VerSe_classifier",
-    "dataset_dir": "/home/student/lisa_ma/prepared",  
-    "job_name": "lower_bound_8ep",
+    "directory": "results/VerSe_upper_bound",
+    "dataset_dir": "/home/student/lisa_ma/prepared",
+    "job_name": "upper_bound_8ep",
     #### Model training settings
-    "model": "densenet169",  # DenseNet variant
-    "pretrained": False,  # MONAI DenseNet doesn't have pretrained weights for 3D medical
-    "spatial_dims": 3,  # 3D images
-    "in_channels": 1,  # Grayscale images
+    "model": "densenet169",
+    "pretrained": False,
+    "spatial_dims": 3,
+    "in_channels": 1,
     "init_features": 64,
     "growth_rate": 32,
-    "block_config": [6, 12, 32, 32],  # DenseNet-169 configuration
+    "block_config": [6, 12, 32, 32],
     "dropout_prob": 0.2,
     "noise_level": "rand1",
     "drop_rate": 0.05,
@@ -54,11 +45,11 @@ spec = {
     "lr": 1e-4,
     "lr_scheduler": True,
     "lr_end_factor": 0.01,
-    "batch_size": 4,  
-    "holdout_set_size": 0, # Kein Holdout-Set
+    "batch_size": 4,
+    "holdout_set_size": 0,
     "use_train_for_val": False,
-    "train_set_size": 0.8, # Split between train and validation set (entire set - holdout_set) (only relevant if "use_train_for_val" is False)
-    #### Data augmentation (C2: kept in spec so it is logged to spec.json / hparams.yaml for provenance)
+    "train_set_size": 0.8,
+    #### Data augmentation (identical to baseline run)
     "augmentations": {
         "enabled": True,
         "rand_adjust_contrast": {"prob": 0.1, "gamma": [0.8, 2.0]},
@@ -66,9 +57,11 @@ spec = {
         "rand_scale_intensity": {"prob": 0.1, "factors": [-0.05, 0.05]},
         "rand_shift_intensity": {"prob": 0.1, "offsets": [-0.05, 0.05]},
     },
-    #### GLARE settings
-    "iterations": 2, # was 2
-    "remove_mislabels": True,
+    #### Upper bound: apply all 109 GT mislabel corrections to train labels
+    "gt_corrections_path": "evaluation/gt_mislabels_complete_LO.xlsx",
+    #### GLARE settings (no iterative GLARE loop for upper bound)
+    "iterations": 2,
+    "remove_mislabels": False,
     "correct_mislabels": False,
     "method": "glarex",
     "threshold_fraction": 0.1
@@ -97,8 +90,6 @@ spec_data = {
 
 class ImageTransform:
     def __init__(self, mean, std, aug_cfg=None):
-        # Always normalize. Append augmentations only if an aug config is given and enabled.
-        # (C2: augmentation params are read from spec["augmentations"] so they get logged.)
         transforms = [
             NormalizeIntensityd(keys=["img"], subtrahend=mean, divisor=std, channel_wise=True),
         ]
@@ -118,7 +109,6 @@ class ImageTransform:
         self.transforms = Compose(transforms)
 
     def __call__(self, data):
-        # Accept either dict({"img": tensor}) or a bare tensor/ndarray.
         if isinstance(data, dict):
             out = self.transforms(data)
             return out["img"]
@@ -135,7 +125,7 @@ def _get_unique_filename(base_name: str = "unnamed"):
 def get_parameter(spec, key, default, typ):
     return typ(spec[key]) if key in spec else default
 
-# Results directory 
+# Results directory
 job_directory = get_parameter(spec, 'directory', 'unnamed', str) + "/" + _get_unique_filename(get_parameter(spec, "job_name", "unnamed", str))
 os.makedirs(job_directory, exist_ok=True)
 
@@ -147,17 +137,17 @@ with open(f"{job_directory}/spec.json", "w") as f:
 data_module = VerSeDataLoader(
         spec=spec,
         train_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"], aug_cfg=spec.get("augmentations")),
-        val_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"], aug_cfg=None),  # B3: val is NOT augmented — only normalized
-        num_workers=6  # Reduziert wegen Speicherproblemen
+        val_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"], aug_cfg=None),
+        num_workers=6
     )
 
 data_module.setup()
 print("Applied pid_corrections (train):", len(getattr(data_module.train_dataset, "pid_corrections", {})))
-# show sample
 for i, (pid, mapping) in enumerate(data_module.train_dataset.pid_corrections.items()):
     if i >= 10:
         break
     print(pid, mapping)
+print("GT label corrections active (train):", len(getattr(data_module.train_dataset, "gt_label_corrections", {})))
 num_classes = 4
 
 ##########################################
@@ -167,7 +157,7 @@ os.makedirs(weights_dir, exist_ok=True)
 
 ########## Set model here ##########
 model = DenseNetModel(
-    num_classes=num_classes, 
+    num_classes=num_classes,
     spec=spec,
     weights_dir=weights_dir
     )
@@ -180,8 +170,8 @@ trainer = Trainer(
     accelerator='auto',
     devices='auto',
     max_epochs=get_parameter(spec, "epochs", 25, int),
-    callbacks=[loss_logger],  
-    logger=tb_logger,         
-    check_val_every_n_epoch=1  
+    callbacks=[loss_logger],
+    logger=tb_logger,
+    check_val_every_n_epoch=1
 )
 trainer.fit(model=model, datamodule=data_module)

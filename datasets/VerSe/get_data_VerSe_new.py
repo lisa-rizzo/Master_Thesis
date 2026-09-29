@@ -162,6 +162,7 @@ def get_filtered_files_across_dsnames(
                 if missing:
                     missing_summary.setdefault(dsname, {})[pid] = sorted(missing)
 
+    collected.sort()
     return collected, missing_summary
     
 
