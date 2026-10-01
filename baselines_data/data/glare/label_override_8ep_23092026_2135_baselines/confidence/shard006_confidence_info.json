@@ -1,0 +1,27 @@
+{
+  "shard_index": 6,
+  "num_shards": 8,
+  "n_samples": 2408,
+  "n_rows": 19264,
+  "n_epochs": 8,
+  "checkpoints": [
+    "epoch_0",
+    "epoch_1",
+    "epoch_2",
+    "epoch_3",
+    "epoch_4",
+    "epoch_5",
+    "epoch_6",
+    "epoch_7"
+  ],
+  "checkpoint_selection": "all",
+  "num_classes": 4,
+  "label_mode": "region",
+  "split": "train",
+  "weights_dir": "<run_dir>/runs/label_override_8ep_23092026_2135/weights",
+  "spec_path": "<run_dir>/glare/label_override_8ep_23092026_2135_baselines/spec_lo.json",
+  "gpu": null,
+  "host": null,
+  "elapsed_minutes": 32.552138078212735,
+  "timestamp": "2026-09-28T22:54:30.621175"
+}

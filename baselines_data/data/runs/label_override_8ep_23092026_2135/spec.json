@@ -1,0 +1,85 @@
+{
+    "directory": "results/VerSe_classifier",
+    "dataset_dir": "/home/student/lisa_ma/prepared",
+    "job_name": "label_override_8ep",
+    "model": "densenet169",
+    "pretrained": false,
+    "spatial_dims": 3,
+    "in_channels": 1,
+    "init_features": 64,
+    "growth_rate": 32,
+    "block_config": [
+        6,
+        12,
+        32,
+        32
+    ],
+    "dropout_prob": 0.2,
+    "noise_level": "rand1",
+    "drop_rate": 0.05,
+    "epochs": 8,
+    "lr": 0.0001,
+    "lr_scheduler": true,
+    "lr_end_factor": 0.01,
+    "batch_size": 4,
+    "holdout_set_size": 0,
+    "use_train_for_val": false,
+    "train_set_size": 0.8,
+    "augmentations": {
+        "enabled": true,
+        "rand_adjust_contrast": {
+            "prob": 0.1,
+            "gamma": [
+                0.8,
+                2.0
+            ]
+        },
+        "rand_gaussian_noise": {
+            "prob": 0.1,
+            "mean": 0.0,
+            "std": 0.05
+        },
+        "rand_scale_intensity": {
+            "prob": 0.1,
+            "factors": [
+                0.95,
+                1.05
+            ]
+        },
+        "rand_shift_intensity": {
+            "prob": 0.1,
+            "offsets": [
+                -0.05,
+                0.05
+            ]
+        }
+    },
+    "iterations": 2,
+    "remove_mislabels": true,
+    "correct_mislabels": false,
+    "method": "glarex",
+    "threshold_fraction": 0.1,
+    "pid_fix_1820": [
+        "verse559",
+        "verse606",
+        "ID0049_ses-14082007_ce-pv",
+        "ID0067_ses-04062009_ce-pv",
+        "ID0297_ses-29102010_ce-pv",
+        "ID0387_ses-25062010_ce-pv",
+        "ID0423_ses-17102007_ce-pv",
+        "ID0423_ses-28072008_ce-pv",
+        "verse626_dir-iso",
+        "verse636",
+        "verse642_dir-sag",
+        "verse814"
+    ],
+    "pid_fix_28": [
+        "verse582_dir-iso",
+        "ctfu00610_ses-20091111_ce-pv",
+        "ctfu00897_ses-20170303_ce-art",
+        "ctfu01006_ses-20160915_ce-no",
+        "verse588",
+        "verse601",
+        "verse631"
+    ]
+}

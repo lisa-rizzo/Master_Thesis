@@ -1,0 +1,38 @@
+### lisathesis.mplstyle
+
+# --- figure & saving ---
+figure.figsize: 6.5, 4.02
+figure.dpi: 150
+figure.constrained_layout.use: True
+savefig.format: pdf
+savefig.dpi: 300
+savefig.bbox: standard
+pdf.fonttype: 42
+
+# --- fonts (match LaTeX body: Times / mathptmx, 12pt) ---
+text.usetex: True
+# newunicodechar: lets the → ≤ ≥ in the plot labels through LaTeX
+text.latex.preamble: \usepackage[T1]{fontenc}\usepackage{mathptmx}\usepackage{amsmath}\usepackage{amssymb}\usepackage{newunicodechar}\newunicodechar{→}{\ensuremath{\rightarrow}}\newunicodechar{≤}{\ensuremath{\leq}}\newunicodechar{≥}{\ensuremath{\geq}}
+font.family: serif
+font.size: 12
+axes.labelsize: 12
+axes.titlesize: 12
+legend.fontsize: 10
+xtick.labelsize: 10
+ytick.labelsize: 10
+axes.formatter.use_locale: False
+
+# --- lines & axes ---
+lines.linewidth: 1.2
+lines.markersize: 4
+axes.linewidth: 0.6
+xtick.major.width: 0.6
+ytick.major.width: 0.6
+xtick.direction: in
+ytick.direction: in
+grid.linewidth: 0.4
+grid.alpha: 0.4
+legend.frameon: False
+
+# --- colors (Okabe–Ito, colorblind-safe) ---
+axes.prop_cycle: cycler('color', ['0072B2', 'D55E00', '009E73', 'CC79A7', 'E69F00', '56B4E9', 'F0E442', '000000'])

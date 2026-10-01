@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-08-19T21:11:02.076956",
+  "run_ts": "20260819_211102",
+  "spec_path": "/home/student/lisa_ma/results/VerSe_classifier/test_glare_20072026_0111/spec.json",
+  "weights_dir": "/home/student/lisa_ma/results/VerSe_classifier/test_glare_20072026_0111/weights",
+  "weights_model": "test_glare_20072026_0111",
+  "gpu_name": "Quadro RTX 5000",
+  "batch_size": 1,
+  "processing_time_minutes": 1926.4819472432137,
+  "samples_per_second": 0.1666768798220469,
+  "total_samples": 19266,
+  "analyzed_samples": 19266,
+  "identified_mislabels": 1927,
+  "num_workers": 6,
+  "system_cleanup": true,
+  "performance_optimized": true
+}

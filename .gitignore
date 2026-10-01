@@ -143,6 +143,7 @@ prepared/
 
 # Pickle files
 *.pkl
+!baselines_data/**/*.pkl
 
 # Other large files
 *.hdf5
@@ -164,3 +165,4 @@ thesis_images/*.png
 
 *.ipynb
 !evaluation/*.ipynb
+!thesis_figures.ipynb

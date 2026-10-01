@@ -23,7 +23,7 @@ import numpy as np
 from sklearn.metrics import accuracy_score, recall_score, f1_score, matthews_corrcoef
 from models.model_densenet import DenseNetModel
 from pytorch_lightning import Trainer, seed_everything
-from dataloaders.dataloader_VerSe_new import VerSeDataLoader
+from data.dataloader_VerSe_new import VerSeDataLoader
 from monai.transforms import Compose, NormalizeIntensityd, RandAdjustContrastd, RandGaussianNoised, RandGaussianSmoothd, RandScaleIntensityd, RandShiftIntensityd, RandSimulateLowResolutiond
 from helper.loss_logger import StepLossLogger
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -55,7 +55,7 @@ spec = {
     "lr_scheduler": True,
     "lr_end_factor": 0.01,
     "batch_size": 4,  
-    "holdout_set_size": 0, # Kein Holdout-Set
+    "holdout_set_size": 0,
     "use_train_for_val": False,
     "train_set_size": 0.8, # Split between train and validation set (entire set - holdout_set) (only relevant if "use_train_for_val" is False)
     #### Data augmentation (C2: kept in spec so it is logged to spec.json / hparams.yaml for provenance)
@@ -73,7 +73,7 @@ spec = {
     "method": "glarex",
     "threshold_fraction": 0.1
 }
-pid_json_path = "/home/student/lisa_ma/datasets/VerSe/pid_corrections.json"
+pid_json_path = "/home/student/lisa_ma/data/pid_corrections.json"
 if os.path.isfile(pid_json_path):
     try:
         with open(pid_json_path, "r") as f:
@@ -148,7 +148,7 @@ data_module = VerSeDataLoader(
         spec=spec,
         train_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"], aug_cfg=spec.get("augmentations")),
         val_transforms=ImageTransform(mean=spec_data["mean"], std=spec_data["std"], aug_cfg=None),  # B3: val is NOT augmented — only normalized
-        num_workers=6  # Reduziert wegen Speicherproblemen
+        num_workers=6
     )
 
 data_module.setup()

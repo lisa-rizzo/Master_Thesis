@@ -1,0 +1,52 @@
+{
+  "shard_index": 9,
+  "num_shards": 12,
+  "n_samples": 1605,
+  "n_epochs": 8,
+  "checkpoints": [
+    "epoch_0",
+    "epoch_1",
+    "epoch_2",
+    "epoch_3",
+    "epoch_4",
+    "epoch_5",
+    "epoch_6",
+    "epoch_7"
+  ],
+  "checkpoint_selection": "all",
+  "windows": {
+    "vog": [
+      "epoch_0",
+      "epoch_1",
+      "epoch_2",
+      "epoch_3",
+      "epoch_4",
+      "epoch_5",
+      "epoch_6",
+      "epoch_7"
+    ],
+    "vog_early": [
+      "epoch_0",
+      "epoch_1",
+      "epoch_2",
+      "epoch_3"
+    ],
+    "vog_late": [
+      "epoch_4",
+      "epoch_5",
+      "epoch_6",
+      "epoch_7"
+    ]
+  },
+  "num_classes": 4,
+  "label_mode": "region",
+  "split": "train",
+  "weights_dir": "<run_dir>/runs/label_override_8ep_23092026_2135/weights",
+  "spec_path": "<run_dir>/glare/label_override_8ep_23092026_2135_baselines/spec_lo.json",
+  "gpu": null,
+  "host": null,
+  "elapsed_minutes": 61.147218545277916,
+  "samples_per_second": 0.43746879476116035,
+  "max_gpu_mem_gb": 2.116457984,
+  "timestamp": "2026-09-28T23:23:14.582032"
+}

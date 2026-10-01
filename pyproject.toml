@@ -1,0 +1,46 @@
+[project]
+name = "mislabeldet"
+version = "0.1.0"
+description = "Mislabel detection in spinal CT (VerSe) via GLARE/GLAREx per-class gradient norms"
+requires-python = "==3.11.*"
+
+# Pins carried over from environment.yml (the former conda env of the same name),
+# which is kept as the reference for the full transitive set.
+dependencies = [
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+    "torchmetrics==1.7.4",
+    "pytorch-lightning==2.5.2",
+    "monai==1.4.0",
+    "numpy==1.26.4",
+    "scipy==1.16.0",
+    "pandas==2.3.1",
+    "openpyxl==3.1.5",
+    "scikit-learn==1.7.1",
+    "tensorboard==2.19.0",
+    "matplotlib==3.10.3",
+    "pillow==11.3.0",
+    "tqdm==4.67.1",
+    "pytz==2025.2",
+    "psutil==7.0.0",
+]
+
+# CUDA build of torch/torchvision. Driver on the pool is 580.173.02, which covers cu126.
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu126" }
+torchvision = { index = "pytorch-cu126" }
+
+[dependency-groups]
+dev = [
+    "ipykernel>=7.3.0",
+    "jupyterlab>=4.6.3",
+]
+
+# Everything is a top-level script run from the repo root, so there is no package to build.
+[tool.uv]
+package = false

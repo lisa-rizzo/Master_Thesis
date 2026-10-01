@@ -1,5 +1,0 @@
-classifier,epoch,n,acc,f1,mcc
-Lower bound,7,2211,0.9914,0.9917,0.9845
-Corrected mislabels (GLAREx 0.2%),7,2211,0.9887,0.9889,0.9797
-Corrected mislabels (GLAREx 0.4%),7,2211,0.9923,0.9925,0.9861
-Upper bound,7,2211,0.9946,0.9948,0.9901

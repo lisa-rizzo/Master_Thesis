@@ -1,12 +1,22 @@
 import os
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import pytorch_lightning as pl
 from torchmetrics.classification import F1Score, Accuracy, MatthewsCorrCoef
 import json
 from monai.networks.nets import DenseNet
 from helper.arguments import get_parameter
+
+
+# DenseNet configurations
+DENSENET_CONFIGS = {
+    "densenet121": {"block_config": (6, 12, 24, 16), "init_features": 64, "growth_rate": 32},
+    "densenet169": {"block_config": (6, 12, 32, 32), "init_features": 64, "growth_rate": 32},
+    "densenet201": {"block_config": (6, 12, 48, 32), "init_features": 64, "growth_rate": 32},
+    "densenet264": {"block_config": (6, 12, 64, 48), "init_features": 64, "growth_rate": 32}
+}
 
 
 class DenseNetModel(pl.LightningModule):
@@ -22,14 +32,14 @@ class DenseNetModel(pl.LightningModule):
         self.block_config = get_parameter(spec, "block_config", [6, 12, 24, 16], list)
         self.dropout_prob = get_parameter(spec, "dropout_prob", 0.2, float)
         
-        # MONAI DenseNet erstellen
+        # Build MONAI DenseNet
         self.model = DenseNet(
             spatial_dims=self.spatial_dims,
             in_channels=self.in_channels,
             out_channels=num_classes,
             init_features=self.init_features,
             growth_rate=self.growth_rate,
-            block_config=tuple(self.block_config),  # Muss Tuple sein
+            block_config=tuple(self.block_config),
             dropout_prob=self.dropout_prob,
             act=('relu', {'inplace': True}),
             norm='batch'
@@ -38,13 +48,30 @@ class DenseNetModel(pl.LightningModule):
         self.epoch_metrics = []
         self.softmax = nn.Softmax(dim=1)
         self.CE = nn.CrossEntropyLoss(reduction="none")
+        # Optional class weights for training only (spec["class_weights"], list). Registered as a
+        # non-persistent buffer so saved state_dicts are unaffected and old/new checkpoints load in both variants.
+        cw = spec.get("class_weights")
+        self.register_buffer(
+            "ce_weight",
+            torch.tensor(cw, dtype=torch.float32) if isinstance(cw, (list, tuple)) and cw else None,
+            persistent=False,
+        )
         self.lr = get_parameter(spec, "lr", 1e-4, float)
         self.use_lr_scheduler = get_parameter(spec, "lr_scheduler", True, bool)
         self.lr_end_factor = get_parameter(spec, "lr_end_factor", 0.001, float)
         self.epochs = get_parameter(spec, "epochs", 25, int)
+        # lr_total_iters lets short probe runs follow the first N steps of a longer schedule
+        # without the LR decaying faster than in the full run.
+        self.lr_total_iters = get_parameter(spec, "lr_total_iters", self.epochs, int)
 
         self.weight_path = weights_dir
         self.lr_list = []
+
+        # Extra checkpoints within an epoch, saved as epoch_<e>_step_<s>.
+        # The GLARE signal is concentrated in epoch 0; checkpoint_steps samples that regime densely.
+        # checkpoint_step_epochs controls which epochs this applies to (default: epoch 0 only).
+        self.checkpoint_steps = sorted(set(get_parameter(spec, "checkpoint_steps", [], list)))
+        self.checkpoint_step_epochs = set(get_parameter(spec, "checkpoint_step_epochs", [0], list))
 
         self.validation_losses = []
         # B1: separate metric instances for train vs val (torchmetrics objects are stateful;
@@ -80,9 +107,31 @@ class DenseNetModel(pl.LightningModule):
         self.log("train_mcc", self.train_mcc, prog_bar=False, on_step=False, on_epoch=True)
         return loss
 
+    def _save_atomic(self, path):
+        """Write state_dict to <path>.partial then rename atomically.
+
+        Avoids a partially-written checkpoint being visible to consumers that
+        watch the weights directory. Rename within the same directory is atomic
+        on NFS. find_epoch_weights ignores .partial files via its regex.
+        """
+        tmp = f"{path}.partial"
+        torch.save(self.state_dict(), tmp)
+        os.replace(tmp, path)
+
+    def on_train_batch_end(self, outputs, batch, batch_idx):
+        """Save sub-epoch checkpoints at step marks defined in checkpoint_steps."""
+        if not self.checkpoint_steps or self.current_epoch not in self.checkpoint_step_epochs:
+            return
+        step = batch_idx + 1
+        if step in self.checkpoint_steps:
+            os.makedirs(self.weight_path, exist_ok=True)
+            path = f"{self.weight_path}/epoch_{self.current_epoch}_step_{step}"
+            self._save_atomic(path)
+            print(f"  Sub-epoch checkpoint: {os.path.basename(path)}")
+
     def on_train_epoch_end(self, *args, **kwargs):
         os.makedirs(self.weight_path, exist_ok=True)
-        torch.save(self.state_dict(), f'{self.weight_path}/epoch_{self.current_epoch}')
+        self._save_atomic(f'{self.weight_path}/epoch_{self.current_epoch}')
         self.lr_list.append(self._get_current_lr())
 
     def on_train_end(self):
@@ -110,9 +159,9 @@ class DenseNetModel(pl.LightningModule):
         print(f"Using lr: {self.lr}")
         optimizer = optim.Adam(self.parameters(), lr=self.lr)
         if self.use_lr_scheduler:
-            print("Init lr scheduler")
+            print(f"Init lr scheduler (LinearLR 1.0 -> {self.lr_end_factor} over {self.lr_total_iters} epochs)")
             lr_scheduler = {
-                'scheduler': optim.lr_scheduler.LinearLR(optimizer=optimizer, start_factor=1.0, end_factor=self.lr_end_factor, total_iters=self.epochs),  
+                'scheduler': optim.lr_scheduler.LinearLR(optimizer=optimizer, start_factor=1.0, end_factor=self.lr_end_factor, total_iters=self.lr_total_iters),
                 'interval': 'epoch'
             }
             return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
@@ -121,7 +170,11 @@ class DenseNetModel(pl.LightningModule):
     def _shared_step(self, X, labels, detach2cpu: bool = False):
         logits = self(X)
         logits_softmax = self.softmax(logits)
-        loss = torch.mean(self.CE(logits, labels))
+        if self.ce_weight is not None:
+            # weighted mean equivalent to nn.CrossEntropyLoss(weight=..., reduction="mean")
+            loss = F.cross_entropy(logits, labels, weight=self.ce_weight)
+        else:
+            loss = torch.mean(self.CE(logits, labels))
         return loss, logits, logits_softmax
 
     def _get_current_lr(self):
@@ -129,6 +182,12 @@ class DenseNetModel(pl.LightningModule):
         return optimizer.param_groups[0]['lr']
 
     def on_validation_epoch_end(self):
+        # Lightning runs a sanity check before training. Without this guard its result
+        # lands as the first entry in epoch_metrics.json (epoch=0, empty train_* values),
+        # which duplicates the real epoch 0 and skews every downstream metric read.
+        if getattr(self.trainer, "sanity_checking", False):
+            return
+
         metrics = {
             "epoch": self.current_epoch,
             "val_loss": self.trainer.callback_metrics.get("val_loss", None),
@@ -144,35 +203,50 @@ class DenseNetModel(pl.LightningModule):
             if hasattr(v, "item"):
                 metrics[k] = float(v.item())
         self.epoch_metrics.append(metrics)
-        out_path = os.path.join(self.weight_path, "epoch_metrics.json")
-        with open(out_path, "w") as f:
-            json.dump(self.epoch_metrics, f, indent=4)
+        write_epoch_metrics(os.path.join(self.weight_path, "epoch_metrics.json"),
+                            self.epoch_metrics)
+
+
+def write_epoch_metrics(out_path, entries):
+    """Write epoch_metrics.json, merging with any existing entries.
+
+    On resume (--resume-dir) the LightningModule is rebuilt with an empty self.epoch_metrics.
+    A naive json.dump with "w" would overwrite previously saved epochs. Entries are merged
+    by epoch number; a freshly computed entry wins over an existing one with the same epoch.
+    """
+    merged = {}
+    if os.path.exists(out_path):
+        try:
+            with open(out_path) as f:
+                for entry in json.load(f):
+                    merged[entry.get("epoch")] = entry
+        except (json.JSONDecodeError, OSError, TypeError, AttributeError):
+            pass    # a corrupt or partially written file must not abort the run
+    for entry in entries:
+        merged[entry.get("epoch")] = entry
+
+    ordered = [merged[k] for k in sorted(merged, key=lambda x: (x is None, x))]
+    with open(out_path, "w") as f:
+        json.dump(ordered, f, indent=4)
+    return ordered
 
 
 def get_densenet_model(variant: str, spatial_dims: int, in_channels: int, out_channels: int, **kwargs):
     """
-    Hilfsfunktion um verschiedene DenseNet-Varianten zu erstellen
-    
+    Instantiate a DenseNet variant.
+
     Parameters:
     - variant: "densenet121", "densenet169", "densenet201", "densenet264"
-    - spatial_dims: 3 für 3D-Daten
-    - in_channels: 1 für Graustufenbilder
-    - out_channels: Anzahl Klassen
+    - spatial_dims: 3 for 3D data
+    - in_channels: 1 for grayscale
+    - out_channels: number of classes
     """
     
-    # DenseNet Konfigurationen
-    configs = {
-        "densenet121": {"block_config": (6, 12, 24, 16), "init_features": 64, "growth_rate": 32},
-        "densenet169": {"block_config": (6, 12, 32, 32), "init_features": 64, "growth_rate": 32},
-        "densenet201": {"block_config": (6, 12, 48, 32), "init_features": 64, "growth_rate": 32},
-        "densenet264": {"block_config": (6, 12, 64, 48), "init_features": 64, "growth_rate": 32}
-    }
+    if variant not in DENSENET_CONFIGS:
+        raise ValueError(f"Unknown DenseNet variant: {variant}. Available: {list(DENSENET_CONFIGS.keys())}")
     
-    if variant not in configs:
-        raise ValueError(f"Unbekannte DenseNet-Variante: {variant}. Verfügbar: {list(configs.keys())}")
-    
-    config = configs[variant]
-    config.update(kwargs)  # Override mit user-spezifischen Parametern
+    config = dict(DENSENET_CONFIGS[variant])  # copy — update() below must not mutate the table
+    config.update(kwargs)
     
     return DenseNet(
         spatial_dims=spatial_dims,
