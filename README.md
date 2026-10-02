@@ -9,7 +9,7 @@ uv sync                    # Python 3.11, PyTorch cu126 — see pyproject.toml /
 export MISLABELDET_DATASET_DIR=/path/to/prepared   # CT crops (74 GB, not in repo)
 ```
 
-If `uv` is not installed: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+If `uv` is not installed: `curl -LsSf https://astral.sh/uv/install.sh | sh` then restart your terminal (or run source ~/.zshrc) 
 
 CT crops are needed only for the two example-image figures. All other figures and all evaluation scripts run without them.
 
